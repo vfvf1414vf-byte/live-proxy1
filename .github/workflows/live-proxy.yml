@@ -1,0 +1,30 @@
+name: Live Proxy Fetcher
+
+on:
+  repository_dispatch:
+    types: [fetch_url]
+
+permissions:
+  contents: write
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch URL and store as result.html
+        env:
+          TARGET_URL: ${{ github.event.client_payload.url }}
+        run: |
+          echo "Fetching $TARGET_URL"
+          curl -L -o result.html "$TARGET_URL"
+          echo "Last fetched: $(date)" >> result.html
+
+      - name: Commit result
+        run: |
+          git config user.name "proxy-bot"
+          git config user.email "proxy@bot.com"
+          git add result.html
+          git commit -m "Proxy fetch ${{ github.event.client_payload.url }}" || echo "No changes"
+          git push
