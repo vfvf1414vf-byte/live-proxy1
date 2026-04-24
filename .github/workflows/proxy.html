@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>GitHub Live Proxy</title>
+  <style>
+    body { font-family: sans-serif; margin: 20px; }
+    #url-input { width: 70%; padding: 8px; }
+    #go-btn { padding: 8px 20px; }
+    #status { margin: 10px 0; color: #555; }
+    iframe { width: 100%; height: 600px; border: 1px solid #ccc; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <h1>🌍 پروکسی زنده گیت‌هاب</h1>
+  <label>آدرس سایت: </label>
+  <input type="text" id="url-input" value="https://httpbin.org/ip" />
+  <button id="go-btn">برو</button>
+  <div id="status">آماده</div>
+
+  <div id="content-area"></div>
+
+  <script>
+    // ========== تنظیمات خود را اینجا وارد کن ==========
+    const GITHUB_TOKEN = "اینجا توکن ساخته شده را بگذار"; 
+    const REPO_OWNER = "نام کاربری گیت‌هاب";
+    const REPO_NAME = "live-proxy";   // نام مخزنی که ساختی
+    // =================================================
+
+    const apiBase = "https://api.github.com";
+
+    async function triggerFetch(url) {
+      const response = await fetch(`${apiBase}/repos/${REPO_OWNER}/${REPO_NAME}/dispatches`, {
+        method: "POST",
+        headers: {
+          "Authorization": `token ${GITHUB_TOKEN}`,
+          "Accept": "application/vnd.github.everest-preview+json",
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          event_type: "fetch_url",
+          client_payload: { url: url }
+        })
+      });
+      if (!response.ok) {
+        throw new Error(`Trigger failed: ${response.status}`);
+      }
+    }
+
+    async function getResultContent() {
+      const url = `${apiBase}/repos/${REPO_OWNER}/${REPO_NAME}/contents/result.html`;
+      const response = await fetch(url, {
+        headers: {
+          "Authorization": `token ${GITHUB_TOKEN}`,
+          "Accept": "application/vnd.github.v3+json"
+        }
+      });
+      if (!response.ok) return null;
+      const data = await response.json();
+      // محتوا به صورت Base64 ذخیره شده
+      return atob(data.content);
+    }
+
+    async function pollForResult(originalUrl, timeout = 60) {
+      const startTime = Date.now();
+      let lastContent = null;
+      while (Date.now() - startTime < timeout * 1000) {
+        const content = await getResultContent();
+        if (content && content !== lastContent) {
+          return content;
+        }
+        lastContent = content;
+        await new Promise(r => setTimeout(r, 2000)); // هر ۲ ثانیه چک کن
+      }
+      throw new Error("Timeout waiting for result");
+    }
+
+    async function navigate(url) {
+      const statusDiv = document.getElementById("status");
+      const contentArea = document.getElementById("content-area");
+      statusDiv.textContent = "⏳ در حال فراخوانی گیت‌هاب...";
+      contentArea.innerHTML = "";
+      try {
+        await triggerFetch(url);
+        statusDiv.textContent = "📡 گیت‌هاب در حال دریافت صفحه است...";
+        const htmlContent = await pollForResult(url);
+        statusDiv.textContent = "✅ صفحه با موفقیت دریافت شد.";
+        // نمایش در iframe
+        const iframe = document.createElement("iframe");
+        iframe.sandbox = "allow-same-origin allow-scripts allow-popups allow-forms";
+        contentArea.appendChild(iframe);
+        iframe.srcdoc = htmlContent;
+      } catch (err) {
+        statusDiv.textContent = "❌ خطا: " + err.message;
+      }
+    }
+
+    document.getElementById("go-btn").addEventListener("click", () => {
+      const url = document.getElementById("url-input").value.trim();
+      if (url) navigate(url);
+    });
+
+    // امکان زدن Enter
+    document.getElementById("url-input").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") document.getElementById("go-btn").click();
+    });
+  </script>
+</body>
+</html>
